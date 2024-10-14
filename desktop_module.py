@@ -4,12 +4,20 @@ import cv2
 import pyttsx3
 import numpy as np
 import tkinter as tk
+import threading
 from time import time
 import face_recognition
 from datetime import datetime
 from tkinter import messagebox
 
+# Global flag for stopping detection
+stop_detection_flag = False
+detection_thread = None
+
 def detection():
+    global stop_detection_flag
+    stop_detection_flag = False  # Reset the flag when detection starts
+
     known_faces = {}
     cwd = os.getcwd()
     if 'faces' in os.listdir(cwd):
@@ -25,27 +33,27 @@ def detection():
     now = datetime.now()
     current_time = now.strftime("%Y-%m-%d %H_%M_%S")
     csv_filename = f"attendance_{current_time}.csv"
-    fieldnames = ['ID', 'Name', 'Date', 'Time In', 'Time Out', 'Status'] #list is created 
+    fieldnames = ['ID', 'Name', 'Date', 'Time In', 'Time Out', 'Status']
 
     video_capture = cv2.VideoCapture(0)
     attendance_record = {}
     last_capture_time = {}
-    face_detected = {} 
-
-    print("\nNow we will scan the face with every known face we have in the face directory...\n")
+    face_detected = {}
 
     with open(csv_filename, mode='w', newline='') as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
 
-        print("\nStarting....\n")
+        print("\nStarting detection...\n")
 
         no = 1
-
         while True:
-            print("On it...\n")
-            _, frame, small_frame, rgb_small_frame = None, None, None, None
+            # Check if the stop button was pressed
+            if stop_detection_flag:
+                print("Stopping detection...")
+                break  # Exit the loop when stop is pressed
 
+            print("On it...\n")
             try:
                 _, frame = video_capture.read()
                 small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
@@ -55,7 +63,7 @@ def detection():
                 engine = pyttsx3.init()
                 engine.setProperty('rate', 150)
                 engine.setProperty('volume', 0.9)
-                text = "Camera is Diabled!"
+                text = "Camera is Disabled!"
                 engine.say(text)
                 engine.runAndWait()
 
@@ -65,7 +73,7 @@ def detection():
             name = None
 
             for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
-                print(f"Tyring face {no}")
+                print(f"Trying face {no}")
                 matches = face_recognition.compare_faces(list(known_face_encodings.values()), face_encoding)
                 face_distances = face_recognition.face_distance(list(known_face_encodings.values()), face_encoding)
 
@@ -87,7 +95,7 @@ def detection():
                         else:
                             attendance_record[name]['Status'] = 'Present'
                             print('No 1')
-                        
+
                         if name not in face_detected or not face_detected[name]:
                             attendance_record[name]['Time In'] = datetime.now().strftime("%H:%M:%S")
                             print('Yes 2')
@@ -96,11 +104,6 @@ def detection():
                         cv2.rectangle(frame, (left * 4, top * 4), (right * 4, bottom * 4), (0, 0, 255), 2)
                         cv2.putText(frame, f"{name} - Present", (left * 4 + 6, bottom * 4 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
-                        '''
-                            Here we will be comfirming that the student is already present, 
-                            Thus we will speak '{Student_name} Present!'
-                        '''
-                        
                         engine = pyttsx3.init()
                         engine.setProperty('rate', 150)
                         engine.setProperty('volume', 0.9)
@@ -110,11 +113,6 @@ def detection():
 
                     else:
                         last_capture_time[name] = current_time
-                        '''
-                            Here the student is already marked its attendence and trying to make another one,
-                            So we will speak, '{Student_name} already marked!'
-                        '''
-
                         engine = pyttsx3.init()
                         engine.setProperty('rate', 150)
                         engine.setProperty('volume', 0.9)
@@ -149,6 +147,15 @@ def detection():
     video_capture.release()
     cv2.destroyAllWindows()
 
+def start_detection():
+    global detection_thread
+    detection_thread = threading.Thread(target=detection)  # Run detection in a new thread
+    detection_thread.start()
+
+def stop_detection():
+    global stop_detection_flag
+    stop_detection_flag = True  # Set the flag to stop detection
+
 def exit_app():
     root.destroy()
 
@@ -156,18 +163,16 @@ def exit_fullscreen(event=None):
     root.attributes("-fullscreen", False)
 
 root = tk.Tk()
-root.title("Attendence Tracking App (BETA)")
+root.title("Attendance Tracking App (BETA)")
 
 root.geometry("800x600")
 root.state("zoomed")
 
-# Welcome_text = tk.Label(root, text="WELCOME TO ATTENDENCE TRACKING APP", font=("Arial", 14))
+label = tk.Label(root, text="WELCOME TO ATTENDANCE TRACKING APP", anchor=tk.CENTER, bg="lightblue", height=3, width=30, bd=3, font=("Arial", 16, "bold"), cursor="hand2", fg="black", padx=15, pady=15, justify=tk.CENTER, relief=tk.RAISED, underline=0, wraplength=250).pack(pady=20)
 
-label = tk.Label(root, text="WELCOME TO ATTENDENCE TRACKING APP", anchor=tk.CENTER, bg="lightblue", height=3, width=30, bd=3, font=("Arial", 16, "bold"), cursor="hand2", fg="black", padx=15, pady=15, justify=tk.CENTER, relief=tk.RAISED, underline=0, wraplength=250).pack(pady=20)
-
+start_button = tk.Button(root, text="Start Detection", command=start_detection, font=("Arial", 14)).pack(padx=5, pady=5)
+stop_button = tk.Button(root, text="Stop Detection", command=stop_detection, font=("Arial", 14)).pack(padx=5, pady=5)
 exit_button = tk.Button(root, text="Exit", command=exit_app, font=("Arial", 14)).pack(padx=5, pady=5)
-
-exit_button = tk.Button(root, text="Start Detection", command=detection, font=("Arial", 14)).pack(padx=5, pady=5)
 
 root.bind("<Escape>", exit_fullscreen)
 root.mainloop()
